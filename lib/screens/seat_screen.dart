@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
 import '../models/section.dart';
 import '../models/user.dart';
 import '../services/reservation_service.dart';
@@ -18,10 +18,12 @@ class _SeatScreenState extends State<SeatScreen> {
   final int rows = 4;
   final int columns = 5;
   List<List<bool>> seats = List.generate(4, (_) => List.generate(5, (_) => true));
-  Map<String, Timer> reservationTimers = {};
+  Map<String, Timer> seatTimers = {};
+  Map<String, int> timeLeft = {};
   ReservationService? _reservationService;
   int dailyReservations = 0;
   final int maxDailyReservations = 5;
+  List<List<bool>> savedSeats = List.generate(4, (_) => List.generate(5, (_) => false));
 
   @override
   void initState() {
@@ -38,55 +40,87 @@ class _SeatScreenState extends State<SeatScreen> {
     });
   }
 
-  void _reserveSeat(int row, int column) async {
-    if (dailyReservations >= maxDailyReservations) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Solo puedes hacer $maxDailyReservations reservas por día.')),
-      );
-      return;
-    }
+  void _toggleSeatSelection(int row, int column) {
+    setState(() {
+      if (savedSeats[row][column]) return; // Evitar cambios en sillas guardadas
 
-    final reservationData = {
-      'row': row.toString(),
-      'column': column.toString(),
-      'section': widget.section.id,
-      'user': widget.user.id,
-    };
+      if (!seats[row][column]) {
+        // Deseleccionar el asiento
+        seats[row][column] = true;
+        dailyReservations--;
+        timeLeft.remove('$row-$column');
+        seatTimers['$row-$column']?.cancel();
+        seatTimers.remove('$row-$column');
+      } else {
+        if (dailyReservations >= maxDailyReservations) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Solo puedes hacer $maxDailyReservations reservas por día.')),
+          );
+          return;
+        }
 
-    try {
-      final reservationId = await _reservationService!.reserveSeat(reservationData);
-      setState(() {
+        // Reservar el asiento
         seats[row][column] = false;
         dailyReservations++;
-      });
+        timeLeft['$row-$column'] = 10; //  5 minutos= 300 en segundos
 
-      reservationTimers[reservationId] = Timer(Duration(seconds: 30), () async {
-        await _reservationService!.cancelReservation(reservationId);
-        setState(() {
-          seats[row][column] = true;
-          dailyReservations--;
+        final timer = Timer.periodic(Duration(seconds: 1), (timer) {
+          setState(() {
+            if (timeLeft['$row-$column']! > 0) {
+              timeLeft['$row-$column'] = timeLeft['$row-$column']! - 1;
+            } else {
+              timer.cancel();
+              seats[row][column] = true;
+              timeLeft.remove('$row-$column');
+              dailyReservations--;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('El tiempo de reserva ha expirado para el asiento ${row + 1}-${column + 1}.')),
+              );
+            }
+          });
         });
-        reservationTimers.remove(reservationId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reserva cancelada por tiempo expirado.')),
-        );
+
+        seatTimers['$row-$column'] = timer;
+      }
+    });
+  }
+
+  Future<void> _saveSelection() async {
+    try {
+      // Simulación de éxito en la llamada al servicio
+      await Future.delayed(Duration(seconds: 2));
+
+      setState(() {
+        for (int row = 0; row < rows; row++) {
+          for (int column = 0; column < columns; column++) {
+            if (!seats[row][column]) {
+              // Guardar el asiento y marcarlo como ocupado
+              savedSeats[row][column] = true;
+              timeLeft.remove('$row-$column');
+              seatTimers['$row-$column']?.cancel();
+              seatTimers.remove('$row-$column');
+            }
+          }
+        }
+        dailyReservations = 0;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Asiento reservado. Confirma dentro de 30 segundos.')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al reservar asiento')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Selección guardada exitosamente.')),
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar la selección.')),
+      );
     }
   }
 
-  void _confirmReservation(String reservationId) async {
-    try {
-      await _reservationService!.confirmReservation(reservationId);
-      reservationTimers[reservationId]?.cancel();
-      reservationTimers.remove(reservationId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reserva confirmada exitosamente.')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al confirmar reserva.')));
+  @override
+  void dispose() {
+    for (final timer in seatTimers.values) {
+      timer.cancel();
     }
+    super.dispose();
   }
 
   @override
@@ -106,80 +140,102 @@ class _SeatScreenState extends State<SeatScreen> {
           ),
         ),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0000FF), Color(0xFF00FFFF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Text(
-                'Horario: ${widget.section.horarioInicio} - ${widget.section.horarioFin}',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+      body: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0000FF), Color(0xFF00FFFF)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
-              SizedBox(height: 20),
-              Expanded(
-                child: GridView.builder(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text(
+                    'Horario: ${widget.section.horarioInicio} - ${widget.section.horarioFin}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
-                  itemCount: rows * columns,
-                  itemBuilder: (context, index) {
-                    final row = index ~/ columns;
-                    final column = index % columns;
-
-                    return GestureDetector(
-                      onTap: seats[row][column] ? () => _reserveSeat(row, column) : null,
-                      child: AnimatedContainer(
-                        duration: Duration(milliseconds: 300),
-                        decoration: BoxDecoration(
-                          color: seats[row][column] ? Colors.greenAccent : Colors.redAccent,
-                          borderRadius: BorderRadius.circular(12.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black26,
-                              offset: Offset(2, 2),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${row + 1}-${column + 1}',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
+                  SizedBox(height: 20),
+                  Expanded(
+                    child: GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 20,
+                        mainAxisSpacing: 20,
                       ),
-                    );
-                  },
-                ),
+                      itemCount: rows * columns,
+                      itemBuilder: (context, index) {
+                        final row = index ~/ columns;
+                        final column = index % columns;
+
+                        return GestureDetector(
+                          onTap: () => _toggleSeatSelection(row, column),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Image.asset(
+                                'assets/images/seat.png',
+                                width: 100,
+                                height: 100,
+                                color: savedSeats[row][column]
+                                    ? Colors.white
+                                    : seats[row][column]
+                                    ? Colors.teal
+                                    : Colors.white,
+                                colorBlendMode: BlendMode.modulate,
+                              ),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${row + 1}-${column + 1}',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  if (savedSeats[row][column])
+                                    Text(
+                                      'Ocupado',
+                                      style: TextStyle(
+                                        color: Colors.yellow,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  if (timeLeft.containsKey('$row-$column'))
+                                    Text(
+                                      '${(timeLeft['$row-$column']! ~/ 60).toString().padLeft(2, '0')}:${(timeLeft['$row-$column']! % 60).toString().padLeft(2, '0')}',
+                                      style: TextStyle(
+                                        color: Colors.yellow,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _saveSelection,
+                    child: Text('Guardar selección'),
+                  ),
+                ],
               ),
-              SizedBox(height: 16),
-              Text(
-                'Reservas diarias: $dailyReservations / $maxDailyReservations',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

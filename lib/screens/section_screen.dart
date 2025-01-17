@@ -68,36 +68,44 @@ class _SectionScreenState extends State<SectionScreen> {
             }
 
             final sections = snapshot.data!;
-            return ListView.builder(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: sections.length,
-              itemBuilder: (context, index) {
-                final section = sections[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    title: Text(
-                      section.nombre,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Colors.blue[900],
+            return Center(
+              child: ListView.builder(
+                shrinkWrap: true, // Para ajustar la lista al contenido
+                padding: const EdgeInsets.all(16.0),
+                itemCount: sections.length,
+                itemBuilder: (context, index) {
+                  final section = sections[index];
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: 300), // Tamaño máximo del contenedor
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8.0),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(16),
+                          title: Text(
+                            section.nombre,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Colors.blue[900],
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${section.horarioInicio} - ${section.horarioFin}',
+                            style: TextStyle(color: Colors.grey[700]),
+                          ),
+                          trailing: Icon(Icons.arrow_forward, color: Colors.blue[700]),
+                          onTap: () => _navigateToSeats(section),
+                        ),
                       ),
                     ),
-                    subtitle: Text(
-                      '${section.horarioInicio} - ${section.horarioFin}',
-                      style: TextStyle(color: Colors.grey[700]),
-                    ),
-                    trailing: Icon(Icons.arrow_forward, color: Colors.blue[700]),
-                    onTap: () => _navigateToSeats(section),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             );
           },
         ),
